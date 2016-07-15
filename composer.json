@@ -1,0 +1,10 @@
+{
+  "autoload": {
+    "psr-4": {"Fire\\": "src/"}
+  },
+  "require": {
+    "ktamas77/firebase-php": "2.2.0",
+    "symfony/console": "v2.8.8",
+    "firebase/php-jwt": "dev-master"
+  }
+}

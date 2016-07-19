@@ -86,10 +86,11 @@ class ReadCommand extends Command
 
 		foreach ($this->_data as $account_name => $account)
 		{
+			$output->writeln('cardID: ' . $account['cardID'], OutputInterface::VERBOSITY_VERBOSE);
+			$output->writeln('Count sub account: ' . count($account['subaccounts']), OutputInterface::VERBOSITY_VERBOSE);
+
 			$smoney_action = sprintf($this->_smoney_action_payment, $account_name);
-			$output->writeln($this->_smoney_url . $smoney_action, OutputInterface::VERBOSITY_DEBUG);
-			$output->writeln('cardID: ' . $account['cardID'], OutputInterface::VERBOSITY_DEBUG);
-			$output->writeln('Count sub account: ' . count($account['subaccounts']), OutputInterface::VERBOSITY_DEBUG);
+			$output->writeln($this->_smoney_url . $smoney_action, OutputInterface::VERBOSITY_VERBOSE);
 
 			foreach ($account['subaccounts'] as $subaccount_name => $subaccount)
 			{
@@ -98,12 +99,12 @@ class ReadCommand extends Command
 					continue;
 				}
 
-				$output->writeln('Amount: ' . $subaccount['totalAmount'], OutputInterface::VERBOSITY_DEBUG);
+				$output->writeln('Amount: ' . $subaccount['totalAmount'], OutputInterface::VERBOSITY_VERBOSE);
 
 				// POST DATA
 				$postfields = array(
-					'OrderId' => 'MrBank money purge :)',
-					//'AccountId' => array('appaccountid' => ''),
+					'OrderId' => 'MrBank money purge :) - ' . date('Y-m-d') . ' - ' . rand(0, 500000),
+					'AccountId' => array('appAccountId' => $subaccount_name),
 					'Card' => array('appCardId' => $account['cardID']),
 					'IsMine' => true,
 					'Amount' => 100 * 100.00,
@@ -121,14 +122,15 @@ class ReadCommand extends Command
 					return -1;
 				}
 
-				var_dump($smoney_response);
-
 				$http_code = curl_getinfo($this->_ch, CURLINFO_HTTP_CODE);
 				if ($http_code == 404)
 				{
 					$output->writeln('<error>Curl HTTP 404</error>');
 					return -1;
 				}
+
+				$smoney_response = json_decode($smoney_response);
+				var_dump($smoney_response);
 			}
 		}
 	}

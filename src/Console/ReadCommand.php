@@ -20,6 +20,9 @@ class ReadCommand extends Command
 	private $_smoney_token;
 	private $_smoney_action_payment;
 
+	/**
+	 * Configure CLI batch
+	 */
 	protected function configure()
 	{
 		$this
@@ -33,6 +36,12 @@ class ReadCommand extends Command
 			);
 	}
 
+	/**
+	 * 
+	 * @param InputInterface $input
+	 * @param OutputInterface $output
+	 * @return int
+	 */
 	protected function execute(InputInterface $input, OutputInterface $output)
 	{
 		$path_filename = $input->getOption('path');
@@ -62,6 +71,11 @@ class ReadCommand extends Command
 		$this->performMoney($output);
 	}
 
+	/**
+	 * 
+	 * @param $output
+	 * @return int
+	 */
 	protected function performMoney($output)
 	{
 		$this->_ch = curl_init();
@@ -94,20 +108,50 @@ class ReadCommand extends Command
 
 			foreach ($account['subaccounts'] as $subaccount_name => $subaccount)
 			{
-				if (!isset($subaccount['totalAmount']))
+				if (!isset($subaccount['totalAmount'])
+				    || !isset($subaccount['creationDate'])
+				    || !isset($subaccount['finishDate'])
+				    || !isset($subaccount['iterate'])
+					|| !isset($subaccount['iterateAmount'])
+					|| !isset($subaccount['lastAmount']))
 				{
 					continue;
 				}
 
+				$create_date = new \DateTime($subaccount['creationDate']);
+				$current_date = new \DateTime();
+				$finish_date = new \DateTime($subaccount['finishDate']);
+				if ($current_date < $create_date || $current_date > $finish_date)
+				{
+					continue;
+				}
+				
+				//$d_create = new \DateTime($subaccount['creationDate']);
+				//$d_finish = new \DateTime($subaccount['finishDate']);
+				//$diff = $d_finish->diff($d_create);
+				//print_r($diff);
+				//continue;
+				
 				$output->writeln('Amount: ' . $subaccount['totalAmount'], OutputInterface::VERBOSITY_VERBOSE);
+				$output->writeln('IterateAmount: ' . $subaccount['iterateAmount'], OutputInterface::VERBOSITY_VERBOSE);
+				$output->writeln('Iterate: ' . $subaccount['iterate'], OutputInterface::VERBOSITY_VERBOSE);
 
+				if ($subaccount['iterate'] != 0)
+				{
+					$amount = $subaccount['iterateAmount'];
+				}
+				else 
+				{
+					$amount = $subaccount['lastAmount'];
+				}
+				
 				// POST DATA
 				$postfields = array(
 					'OrderId' => 'MrBank money purge :) - ' . date('Y-m-d') . ' - ' . rand(0, 500000),
 					'AccountId' => array('appAccountId' => $subaccount_name),
 					'Card' => array('appCardId' => $account['cardID']),
 					'IsMine' => true,
-					'Amount' => 100 * 100.00,
+					'Amount' => $amount * 100.00,
 				);
 				curl_setopt($this->_ch, CURLOPT_POST, true);
 				curl_setopt($this->_ch, CURLOPT_POSTFIELDS, json_encode($postfields));
@@ -129,8 +173,21 @@ class ReadCommand extends Command
 					return -1;
 				}
 
-				$smoney_response = json_decode($smoney_response);
-				var_dump($smoney_response);
+				$smoney_response = json_decode($smoney_response, true);
+				
+				if (array_key_exists('ErrorMessage', $smoney_response))
+				{
+					$output->writeln('<error>SMoney Error: ' . $smoney_response['ErrorMessage'] . '</error>');
+				}
+				else 
+				{
+					$path_update = '/users/' . $account_name . '/subaccounts/' . $subaccount_name;
+					$data_update = array(
+						'iterate' => (int)$subaccount['iterate'] - 1,
+					);
+
+					$firebase_response = $this->_firebase->update($path_update, $data_update);
+				}
 			}
 		}
 	}

@@ -37,7 +37,7 @@ class ReadCommand extends Command
 	}
 
 	/**
-	 * 
+	 *
 	 * @param InputInterface $input
 	 * @param OutputInterface $output
 	 * @return int
@@ -48,14 +48,14 @@ class ReadCommand extends Command
 		if ($path_filename == '')
 		{
 			$output->writeln('<error>Path filename empty</error>');
-			return -1;
+			return 1;
 		}
 
 		$ini_file = parse_ini_file($path_filename, true);
 		if ($ini_file === false)
 		{
 			$output->writeln('<error>Config file not exist</error>');
-			return -1;
+			return 1;
 		}
 
 		$this->_url   = $ini_file['firebase']['url'];
@@ -68,11 +68,19 @@ class ReadCommand extends Command
 		$this->_firebase = new \Firebase\FirebaseLib($this->_url, $this->_token);
 		$this->_data     = json_decode($this->_firebase->get($this->_path), true);
 
-		$this->performMoney($output);
+		try
+		{
+			$this->performMoney($output);
+		}
+		catch (\Exception $e)
+		{
+			$output->writeln('<error>Error: ' . $e->getMessage() . '</error>');
+			return 1;
+		}
 	}
 
 	/**
-	 * 
+	 *
 	 * @param $output
 	 * @return int
 	 */
@@ -100,6 +108,7 @@ class ReadCommand extends Command
 
 		foreach ($this->_data as $account_name => $account)
 		{
+			$output->writeln('');
 			$output->writeln('cardID: ' . $account['cardID'], OutputInterface::VERBOSITY_VERBOSE);
 			$output->writeln('Count sub account: ' . count($account['subaccounts']), OutputInterface::VERBOSITY_VERBOSE);
 
@@ -118,20 +127,21 @@ class ReadCommand extends Command
 					continue;
 				}
 
-				$create_date = new \DateTime($subaccount['creationDate']);
-				$current_date = new \DateTime();
-				$finish_date = new \DateTime($subaccount['finishDate']);
-				if ($current_date < $create_date || $current_date > $finish_date)
+				$data = array(
+					'date_begin' => $subaccount['creationDate'],
+					'date_end' => $subaccount['finishDate'],
+					'date_current' => new \DateTime(),
+					'date_last_payment' => isset($subaccount['lastPayment']) && is_string($subaccount['lastPayment']) ? $subaccount['lastPayment'] : null,
+					'schedule' => $subaccount['scheduleOption'],
+				);
+				$data['date_current']->setTime(0, 0, 0);
+
+				if (!$this->isDatePayment($data))
 				{
+					$output->writeln('Subaccount: ' . $subaccount_name . ' date is not good for payment', OutputInterface::VERBOSITY_VERBOSE);
 					continue;
 				}
-				
-				//$d_create = new \DateTime($subaccount['creationDate']);
-				//$d_finish = new \DateTime($subaccount['finishDate']);
-				//$diff = $d_finish->diff($d_create);
-				//print_r($diff);
-				//continue;
-				
+
 				$output->writeln('Amount: ' . $subaccount['totalAmount'], OutputInterface::VERBOSITY_VERBOSE);
 				$output->writeln('IterateAmount: ' . $subaccount['iterateAmount'], OutputInterface::VERBOSITY_VERBOSE);
 				$output->writeln('Iterate: ' . $subaccount['iterate'], OutputInterface::VERBOSITY_VERBOSE);
@@ -140,11 +150,11 @@ class ReadCommand extends Command
 				{
 					$amount = $subaccount['iterateAmount'];
 				}
-				else 
+				else
 				{
 					$amount = $subaccount['lastAmount'];
 				}
-				
+
 				// POST DATA
 				$postfields = array(
 					'OrderId' => 'MrBank money purge :) - ' . date('Y-m-d') . ' - ' . rand(0, 500000),
@@ -162,33 +172,85 @@ class ReadCommand extends Command
 
 				if ($smoney_response === false)
 				{
-					$output->writeln('<error>Curl ' . curl_error($this->_ch) . '</error>');
-					return -1;
+					throw new \Exception("Curl " . curl_error($this->_ch));
 				}
 
 				$http_code = curl_getinfo($this->_ch, CURLINFO_HTTP_CODE);
 				if ($http_code == 404)
 				{
-					$output->writeln('<error>Curl HTTP 404</error>');
-					return -1;
+					throw new \Exception("Curl HTTP 404");
 				}
 
 				$smoney_response = json_decode($smoney_response, true);
-				
+
 				if (array_key_exists('ErrorMessage', $smoney_response))
 				{
 					$output->writeln('<error>SMoney Error: ' . $smoney_response['ErrorMessage'] . '</error>');
 				}
-				else 
+				else
 				{
+					$d_current = new \DateTime();
 					$path_update = '/users/' . $account_name . '/subaccounts/' . $subaccount_name;
 					$data_update = array(
 						'iterate' => (int)$subaccount['iterate'] - 1,
+						'lastPayment' => $d_current->format('l F j Y'),
 					);
 
 					$firebase_response = $this->_firebase->update($path_update, $data_update);
 				}
 			}
 		}
+	}
+
+	/**
+	 * date_begin string
+	 * date_end string
+	 * date_current DateTime
+	 * date_last_payment string
+	 * schedule int
+	 *
+	 * @param array $data
+	 * @return bool
+	 */
+	protected function isDatePayment($data)
+	{
+		$d_begin = new \DateTime($data['date_begin']);
+		$d_end = new \DateTime($data['date_end']);
+		$d_current = $data['date_current'];
+		$d_last = $data['date_last_payment'] ? new \DateTime($data['date_last_payment']) : null;
+		$schedule = $data['schedule'];
+
+		if ($d_current < $d_begin || $d_current > $d_end)
+		{
+			return false;
+		}
+
+		if ($schedule == 0 && $d_last < $d_current)
+		{
+			return true;
+		}
+
+		// date('N') -> 1 (for Monday) through 7 (for Sunday)
+		if ($schedule == 1 && $d_current->format('N') == $d_begin->format('N') && $d_last < $d_current)
+		{
+			return true;
+		}
+
+		if ($schedule == 2)
+		{
+			if ($d_last === null)
+			{
+				return true;
+			}
+
+			$d_next_month = clone $d_last;
+			$d_next_month->add(new \DateInterval('P1M'));
+			if ($d_next_month == $d_current)
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 }

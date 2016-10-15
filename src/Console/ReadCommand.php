@@ -77,6 +77,7 @@ class ReadCommand extends Command
 			$output->writeln('<error>Error: ' . $e->getMessage() . '</error>');
 			return 1;
 		}
+		return 0;
 	}
 
 	/**
@@ -138,7 +139,7 @@ class ReadCommand extends Command
 
 				if (!$this->isDatePayment($data))
 				{
-					$output->writeln('Subaccount: ' . $subaccount_name . ' date is not good for payment', OutputInterface::VERBOSITY_VERBOSE);
+					$output->writeln('Subaccount: ' . $subaccount_name . ' date is not good for payment but it\'s ok', OutputInterface::VERBOSITY_VERBOSE);
 					continue;
 				}
 

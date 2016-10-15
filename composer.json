@@ -5,6 +5,7 @@
   "require": {
     "ktamas77/firebase-php": "2.2.0",
     "symfony/console": "v2.8.8",
-    "firebase/php-jwt": "dev-master"
+    "firebase/php-jwt": "dev-master",
+    "symfony/process": "v2.8.12"
   }
 }
